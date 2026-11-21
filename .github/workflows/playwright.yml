@@ -40,6 +40,10 @@ jobs:
     name: Run Playwright Tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      EVENTHUB_BASE_URL: https://eventhub.rahulshettyacademy.com
+      EVENTHUB_TEST_USER_EMAIL: ${{ secrets.EVENTHUB_TEST_USER_EMAIL }}
+      EVENTHUB_TEST_USER_PASSWORD: ${{ secrets.EVENTHUB_TEST_USER_PASSWORD }}
 
     steps:
       # ── Checkout ─────────────────────────────────────────────────────────────
@@ -63,13 +67,18 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install chromium --with-deps
 
+      - name: Verify E2E credentials are configured
+        run: |
+          if [ -z "$EVENTHUB_TEST_USER_EMAIL" ] || [ -z "$EVENTHUB_TEST_USER_PASSWORD" ]; then
+            echo "::error::Configure EVENTHUB_TEST_USER_EMAIL and EVENTHUB_TEST_USER_PASSWORD repository secrets."
+            exit 1
+          fi
+
       # ── Run all Playwright tests ─────────────────────────────────────────────
       # Tests run against the live site defined in playwright.config.ts.
       # --reporter=html,line gives a browsable HTML report + inline line output.
-      # `|| true` ensures the artifact upload step always runs even if tests fail.
       - name: Run Playwright tests
         run: npx playwright test --reporter=html,line
-        continue-on-error: true
 
       # ── Upload HTML report as artifact ───────────────────────────────────────
       # The report is generated in playwright-report/ by the html reporter.

@@ -24,8 +24,13 @@ Thumbs.db
 
 # IDE
 .vscode/
+!.vscode/
+!.vscode/mcp.json
 .idea/
 
 # Playwright test artifacts
 playwright-report/
 test-results/
+
+# Notes
+/ImportantNotes
