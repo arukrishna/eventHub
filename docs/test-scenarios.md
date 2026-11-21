@@ -1,7 +1,7 @@
 # EventHub — Booking Management Test Scenarios
 
-Generated: 2026-03-06
-Scope: Booking Management (Flow 4 — View, Cancel, Clear, Refund Eligibility)
+Generated: 2026-11-01
+Scope: Booking lifecycle and management (create, view, cancel, clear, and refund eligibility)
 
 ---
 
@@ -101,6 +101,36 @@ Scope: Booking Management (Flow 4 — View, Cancel, Clear, Refund Eligibility)
 
 ---
 
+### TC-008: Cancel a booking from its list card
+**Category**: Happy Path
+**Priority**: P1
+**Preconditions**: User is logged in and has a confirmed booking
+**Steps**:
+1. Navigate to `/bookings`
+2. Click "Cancel Booking" on the booking card
+3. Confirm with "Yes, cancel it"
+4. Observe the updated list
+**Expected Results**: A success toast appears; the dialog closes; the cancelled booking is removed from the list after its query refreshes
+**Business Rule**: Flow 4 — users can cancel an individual booking; cancellation deletes the booking
+**Suggested Layer**: E2E
+
+---
+
+### TC-009: Create a booking and view its confirmation
+**Category**: Happy Path
+**Priority**: P0
+**Preconditions**: User is logged in; the event exists and has enough seats; customer details are valid
+**Steps**:
+1. Open an event detail page and select a quantity from 1 to 10
+2. Enter the customer's name, email, and phone
+3. Submit the booking
+4. Observe the confirmation and open "View My Bookings"
+**Expected Results**: The API returns HTTP 201 with a confirmed booking, event details, a unique booking reference, and `totalPrice = event.price × quantity`; the new booking appears in the user's bookings list
+**Business Rule**: Flow 3 — booking confirmation; Rule 9 — total price is event price multiplied by quantity; `bookingController.createBooking` returns 201 and the created booking
+**Suggested Layer**: E2E / API
+
+---
+
 ## Business Rules
 
 ### TC-100: FIFO pruning — 10th booking replaces oldest booking from a different event
@@ -117,15 +147,16 @@ Scope: Booking Management (Flow 4 — View, Cancel, Clear, Refund Eligibility)
 
 ---
 
-### TC-101: FIFO pruning — same-event fallback permanently burns a seat
+### TC-101: FIFO pruning — same-event replacement decrements computed availability
 **Category**: Business Rule
 **Priority**: P1
 **Preconditions**: User has exactly 9 bookings all for the SAME event; enough seats remain
 **Steps**:
-1. Create a 10th booking for the same event
-2. Retrieve the event's available seats
-**Expected Results**: Oldest booking is deleted; new booking is created; `availableSeats` decremented by the new booking's quantity (seat permanently burned via `decrementSeats`)
-**Business Rule**: `sameEventFallback` path in `bookingService.createBooking`
+1. Record the event's `availableSeats` and the oldest booking's quantity
+2. Create a 10th booking for the same event and note its quantity
+3. Retrieve the event's `availableSeats` again
+**Expected Results**: The oldest booking is deleted and the new one is created. Current implementation decrements the event's stored `availableSeats` by the new quantity in the same-event fallback, while the event response also subtracts the user's outstanding booking quantities; for old quantity `qOld` and new quantity `qNew`, returned availability changes by `qOld - 2 × qNew` (with equal quantities, it falls by the new quantity).
+**Business Rule**: Rule 6 documents per-user availability; discovered behavior in `bookingService.createBooking` and `eventService.withPersonalSeats` applies an additional stored-seat decrement on same-event FIFO fallback
 **Suggested Layer**: API
 
 ---
@@ -137,7 +168,7 @@ Scope: Booking Management (Flow 4 — View, Cancel, Clear, Refund Eligibility)
 **Steps**:
 1. Book the event
 2. Read the `bookingRef` from the confirmation card or API response
-**Expected Results**: `bookingRef` starts with the uppercase first character of the event title (e.g., "T-XXXXXX" for "Tech Conference")
+**Expected Results**: `bookingRef` matches `[FIRST_LETTER]-[6 uppercase alphanumeric characters]`, where `FIRST_LETTER` is the event title's first character converted to uppercase (e.g., `T-A3B2C1`)
 **Business Rule**: `randomRef` function: prefix = `eventTitle[0].toUpperCase()`; Rule 7
 **Suggested Layer**: E2E / API
 
@@ -233,9 +264,22 @@ Scope: Booking Management (Flow 4 — View, Cancel, Clear, Refund Eligibility)
 **Steps**:
 1. Navigate to `/bookings`
 2. Look for "Clear all bookings" link
-**Expected Results**: "Clear all bookings" link is visible in the top-right of the page header
-**Business Rule**: Flow 4 — UI always shows clear option when bookings exist
+**Expected Results**: "Clear all bookings" control is visible in the top-right of the page header
+**Business Rule**: Flow 4 — the bookings page provides a clear-all control
 **Suggested Layer**: E2E / Component
+
+---
+
+### TC-110: List bookings with event and status filters in newest-first order
+**Category**: Business Rule
+**Priority**: P1
+**Preconditions**: User has bookings for at least two events, with distinct creation times
+**Steps**:
+1. Send `GET /api/bookings?eventId=<event-id>&status=confirmed&page=1&limit=10` with the user's JWT
+2. Compare returned rows and their `createdAt` values
+**Expected Results**: Every returned booking belongs to the authenticated user and matches the requested event and status; results are ordered newest first
+**Business Rule**: `bookingRepository.findAll` filters by `userId`, optional `eventId` and `status`, and orders by `createdAt` descending
+**Suggested Layer**: API
 
 ---
 
@@ -324,6 +368,32 @@ Scope: Booking Management (Flow 4 — View, Cancel, Clear, Refund Eligibility)
 1. Send `GET /api/bookings/ref/:userA_ref` with User B's JWT
 **Expected Results**: HTTP 403; "You do not own this booking"
 **Business Rule**: `bookingService.getBookingByRef` — ownership check
+**Suggested Layer**: API
+
+---
+
+### TC-207: Clear-all bookings only deletes the authenticated user's bookings
+**Category**: Security
+**Priority**: P0
+**Preconditions**: Users A and B each have at least one booking
+**Steps**:
+1. Send `DELETE /api/bookings` with User A's JWT
+2. Retrieve bookings as User A and User B
+**Expected Results**: User A's bookings are deleted; User B's bookings remain unchanged
+**Business Rule**: User sandbox isolation; `deleteAllForUser` scopes deletion to the authenticated `userId`
+**Suggested Layer**: API
+
+---
+
+### TC-208: Unauthenticated booking mutations return 401
+**Category**: Security
+**Priority**: P0
+**Preconditions**: No valid JWT
+**Steps**:
+1. Send `POST /api/bookings` with a valid booking payload and no Authorization header
+2. Send `DELETE /api/bookings/:id` with no Authorization header
+**Expected Results**: Both requests return HTTP 401; no booking is created or deleted
+**Business Rule**: `authMiddleware` is applied to every `/api/bookings` route
 **Suggested Layer**: API
 
 ---
@@ -440,6 +510,34 @@ Scope: Booking Management (Flow 4 — View, Cancel, Clear, Refund Eligibility)
 
 ---
 
+### TC-309: Invalid booking customer fields and fractional quantities return 400
+**Category**: Negative
+**Priority**: P1
+**Preconditions**: User is authenticated and the event has available seats
+**Steps**:
+1. Submit a booking with a one-character customer name
+2. Submit a booking with a malformed email address
+3. Submit a booking with an invalid phone character or fewer than 10 characters
+4. Submit a booking with a fractional quantity such as `1.5`
+**Expected Results**: Each request returns HTTP 400 with a validation detail for the invalid field; no booking is created
+**Business Rule**: `bookingValidator` requires customer name length >= 2, valid email, phone length >= 10 with allowed characters, and an integer quantity from 1 to 10
+**Suggested Layer**: API
+
+---
+
+### TC-310: Failed 10th booking prunes the oldest booking before validation
+**Category**: Negative
+**Priority**: P0
+**Preconditions**: User has exactly 9 bookings; use a fresh 9-booking fixture for each failed-create case and record all booking IDs
+**Steps**:
+1. Attempt a 10th booking with a non-existent event ID; retrieve the user's bookings
+2. Reset to 9 bookings, then attempt a booking for an existing event where the requested quantity still exceeds available seats after any applicable pruning; retrieve the user's bookings
+**Expected Results**: The attempts fail with 404 and 400 respectively. In the current implementation, `createBooking` prunes the oldest booking before checking that the event exists or that seats are sufficient, so each failed attempt leaves 8 bookings and the oldest booking is missing. No new booking is created.
+**Business Rule**: Discovered ordering in `bookingService.createBooking`: FIFO deletion precedes event lookup and seat validation; this scenario captures the resulting mutation on a failed request
+**Suggested Layer**: API
+
+---
+
 ## Edge Cases
 
 ### TC-400: Exactly 9 bookings — adding a 10th prunes oldest from a DIFFERENT event (preferred)
@@ -456,15 +554,16 @@ Scope: Booking Management (Flow 4 — View, Cancel, Clear, Refund Eligibility)
 
 ---
 
-### TC-401: Exactly 9 bookings all from same event — 10th triggers same-event fallback and burns seat
+### TC-401: Same-event FIFO replacement with equal quantities decrements computed availability
 **Category**: Edge Case
 **Priority**: P1
-**Preconditions**: User has 9 bookings all for Event X
+**Preconditions**: User has 9 bookings all for Event X, each with the same quantity; enough seats remain for one replacement
 **Steps**:
-1. Create a new booking for Event X (10th)
-2. Re-fetch Event X's available seats
-**Expected Results**: Oldest booking removed; new booking created; `availableSeats` is permanently decremented by the new quantity (seat burned via `eventRepository.decrementSeats`)
-**Business Rule**: `sameEventFallback = true` → `decrementSeats` called in `bookingService.createBooking`
+1. Record Event X's available seats
+2. Create a 10th booking for Event X using the same quantity as the oldest booking
+3. Re-fetch Event X's available seats
+**Expected Results**: The oldest booking is replaced by the new booking. Despite the unchanged outstanding ticket quantity, the current implementation's same-event fallback decrements the event's stored seats by the new quantity, and the returned per-user availability is lower by that quantity.
+**Business Rule**: Rule 6 describes per-user availability; discovered behavior in `bookingService.createBooking` and `eventService.withPersonalSeats` adds a stored-seat decrement in this fallback
 **Suggested Layer**: API
 
 ---
@@ -530,7 +629,7 @@ Scope: Booking Management (Flow 4 — View, Cancel, Clear, Refund Eligibility)
 **Steps**:
 1. Navigate to `/bookings`
 2. Click "Clear all bookings" and confirm
-**Expected Results**: Booking is deleted; page shows empty state; `DELETE /api/bookings` returns `{ deleted: 1 }`
+**Expected Results**: Booking is deleted; page shows empty state; `DELETE /api/bookings` returns HTTP 200 with message `"1 booking(s) cleared"`
 **Business Rule**: `clearAllBookings` — `deleteAllForUser` returns count of deleted records
 **Suggested Layer**: E2E / API
 
@@ -539,7 +638,7 @@ Scope: Booking Management (Flow 4 — View, Cancel, Clear, Refund Eligibility)
 ### TC-407: Pagination on bookings list (API) — page 2 with partial results
 **Category**: Edge Case
 **Priority**: P2
-**Preconditions**: User has more than the default page limit of bookings visible in API
+**Preconditions**: A test fixture has more than the default page limit of bookings for this user (seed records directly if needed; normal booking creation caps the user at 9)
 **Steps**:
 1. Send `GET /api/bookings?page=2&limit=5`
 **Expected Results**: Returns page 2 results; `pagination.page = 2`; `data` array contains at most 5 items
@@ -697,7 +796,7 @@ Scope: Booking Management (Flow 4 — View, Cancel, Clear, Refund Eligibility)
 ### TC-510: Bookings page pagination UI renders when total exceeds page size
 **Category**: UI State
 **Priority**: P2
-**Preconditions**: API returns `pagination.totalPages > 1`
+**Preconditions**: A test fixture has enough bookings for the API to return `pagination.totalPages > 1` (normal booking creation caps the user at 9)
 **Steps**:
 1. Navigate to `/bookings` with enough bookings to trigger multi-page response
 2. Observe pagination controls
