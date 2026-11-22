@@ -92,14 +92,6 @@ const formatPrice = (amount) =>
     maximumFractionDigits: 0,
   }).format(amount);
 
-const formatEventDate = (date) =>
-  new Date(date).toLocaleDateString('en-IN', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  });
-
 async function cancelBookingCard(page, bookingRef) {
   const bookings = await getBookings(page);
   if (!bookings.some((booking) => booking.bookingRef === bookingRef)) return;
@@ -157,7 +149,17 @@ test.describe('Booking Management — Critical Happy Paths', () => {
     await expect(page.getByRole('heading', { name: eventTitle })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Event Details' })).toBeVisible();
     await expect(page.getByText(booking.event.category, { exact: true })).toBeVisible();
-    await expect(page.getByText(formatEventDate(booking.event.eventDate), { exact: true })).toBeVisible();
+    const formattedEventDate = await page.evaluate(
+      (eventDate) =>
+        new Date(eventDate).toLocaleDateString('en-IN', {
+          weekday: 'long',
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric',
+        }),
+      booking.event.eventDate,
+    );
+    await expect(page.getByText(formattedEventDate, { exact: true })).toBeVisible();
     await expect(page.getByText(booking.event.venue, { exact: true })).toBeVisible();
     await expect(page.getByText(booking.event.city, { exact: true })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Customer Details' })).toBeVisible();
