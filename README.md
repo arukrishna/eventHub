@@ -269,6 +269,19 @@ eventhub/
 
 ## Playwright Test Selectors
 
+### Running the E2E tests
+
+Copy `.env.example` to `.env` and set `EVENTHUB_TEST_USER_EMAIL` and
+`EVENTHUB_TEST_USER_PASSWORD` to a dedicated test account. The environment file
+is ignored by Git. `EVENTHUB_BASE_URL` should be the site origin, without `/login`.
+Then run:
+
+```bash
+npm test
+```
+
+The booking-management tests create and cancel bookings on the configured site.
+
 All key UI elements have `data-testid` attributes for Playwright automation:
 
 | `data-testid` | Element |
